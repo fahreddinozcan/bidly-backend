@@ -1,0 +1,19 @@
+package core.message;
+
+public enum MessageType {
+    LIST_AUCTIONS,
+
+    ERROR_LIST_AUCTIONS,
+
+    PLACE_BID,
+    BID_ACCEPTED,
+    BID_REJECTED,
+
+    CREATE_AUCTION,
+    AUCTION_CREATION_ACCEPTED,
+    AUCTION_CREATION_REJECTED,
+
+    ERROR
+
+
+}
