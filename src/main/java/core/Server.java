@@ -9,10 +9,12 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
 
 public class Server {
     private final ConcurrentHashMap<UUID, CountingSemaphore> auctionSemaphores;
-    private final ConcurrentHashMap<UUID, Auction> activeAuctions;
+    private final Map<UUID, Auction> auctions ;
+    private final Map<UUID, Set<Bid>> auctionBids;
     public ServerSocket serverSocket;
     public final int port;
     public final Database database;
@@ -21,9 +23,10 @@ public class Server {
 
     public Server(int port){
         this.port = port;
-        this.database = new Database();
+        this.auctions = new HashMap<>();
+        this.auctionBids = new HashMap<>();
+        this.database = new Database(auctions, auctionBids);
         this.auctionSemaphores = new ConcurrentHashMap<>();
-        this.activeAuctions = new ConcurrentHashMap<>();
         database.loadActiveAuctions();
         running = true;
     }

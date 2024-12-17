@@ -2,7 +2,6 @@ package model;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
@@ -90,6 +89,10 @@ public class Auction {
         this.startTime = startTime;
     }
 
+    public BigDecimal getMinimumBidIncrement() {
+        return minimumBidIncrement;
+    }
+
     public long getEndTime() {
         return endTime;
     }
@@ -123,13 +126,20 @@ public class Auction {
     }
 
     public boolean canBid(BigDecimal bidAmount) {
+        if (System.currentTimeMillis() / 1000 >= endTime) {
+            return false;
+        }
+
         BigDecimal minimumBid = currentPrice.add(minimumBidIncrement);
         return bidAmount.compareTo(minimumBid) >= 0;
     }
 
     public List<Bid> getBiddingHistory() {
-        biddingHistory.sort((b1, b2) -> Long.compare(b2.getTimestamp(), b1.getTimestamp()));
-        return biddingHistory;
+        synchronized(this) {
+            List<Bid> sortedHistory = new ArrayList<>(biddingHistory);
+            sortedHistory.sort((b1, b2) -> Long.compare(b2.getTimestamp(), b1.getTimestamp()));
+            return sortedHistory;
+        }
     }
 
     public void setBiddingHistory(List<Bid> biddingHistory) {
@@ -139,7 +149,22 @@ public class Auction {
     public void addBid(Bid bid) {
         if (bid == null)
             throw new IllegalArgumentException("Bid cannot be null");
-        biddingHistory.add(bid);
+
+        boolean bidExists = biddingHistory.stream()
+                .anyMatch(existingBid -> existingBid.getId().equals(bid.getId()));
+
+        if (!bidExists) {
+            int insertIndex = 0;
+            for (int i = 0; i < biddingHistory.size(); i++) {
+                if (bid.getTimestamp() < biddingHistory.get(i).getTimestamp()) {
+                    insertIndex = i + 1;
+                } else {
+                    break;
+                }
+            }
+            biddingHistory.add(insertIndex, bid);
+            setCurrentPrice(bid.getPrice());
+        }
     }
 
     @Override

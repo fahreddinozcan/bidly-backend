@@ -11,6 +11,7 @@ import model.Bid;
 import utils.CountingSemaphore;
 
 import java.io.*;
+import java.math.BigDecimal;
 import java.net.Socket;
 import java.util.List;
 import java.util.UUID;
@@ -117,7 +118,6 @@ public class AuctionHandler extends Thread {
                 return;
             }
 
-            System.out.printf("BIDDING new bid:%d | current: %d | can bid: %b\n", bidMessage.getPrice().intValue(), auction.getCurrentPrice().intValue(), auction.canBid(bidMessage.getPrice()));
             if (auction.canBid(bidMessage.getPrice())) {
                 Bid bid = new Bid(
                         UUID.randomUUID(),
@@ -125,12 +125,19 @@ public class AuctionHandler extends Thread {
                         bidMessage.getProductId(),
                         bidMessage.getPrice()
                 );
+                System.out.println("Bid accepted: " + bid.getPrice());
                 database.saveBid(bid);
-                writeResponse(new AuctionMessage(MessageType.BID_ACCEPTED, null));
-
+                writeResponse(new AuctionMessage(MessageType.BID_ACCEPTED, "Bid accepted"));
                 broadcastAuctionUpdate();
             } else {
-                writeResponse(new AuctionMessage(MessageType.BID_REJECTED, "Bid rejected"));
+                BigDecimal minimumAllowedBid = auction.getMinimumBidIncrement().add(auction.getCurrentPrice());
+                String rejectionMessage = String.format(
+                        "Bid rejected. Minimum allowed bid is %s (current price %s + minimum increment %s)",
+                        minimumAllowedBid,
+                        auction.getCurrentPrice().toString(),
+                        auction.getMinimumBidIncrement().toString()
+                );
+                writeResponse(new AuctionMessage(MessageType.BID_REJECTED, rejectionMessage));
             }
         } finally {
             cs.V();
@@ -140,28 +147,30 @@ public class AuctionHandler extends Thread {
     private void handleCreateAuction(AuctionMessage message) {
         JsonObject data = gson.toJsonTree(message.getData()).getAsJsonObject();
 
-        Auction auction = new Auction(
-                data.get("name").getAsString(),
-                data.get("startingPrice").getAsBigDecimal(),
-                data.get("endTime").getAsLong(),
-                data.get("seller").getAsString(),
-                data.get("minimumBidIncrement").getAsBigDecimal()
-        );
+        String auctionName = data.get("name").getAsString().toLowerCase();
 
+        synchronized (auctionName.intern()){
+            if (database.isAuctionNameTaken(auctionName)) {
+                writeResponse(new AuctionMessage(MessageType.AUCTION_CREATION_REJECTED, "Auction name already taken"));
+                return;
+            }
+            Auction auction = new Auction(
+                    data.get("name").getAsString(),
+                    data.get("startingPrice").getAsBigDecimal(),
+                    data.get("endTime").getAsLong(),
+                    data.get("seller").getAsString(),
+                    data.get("minimumBidIncrement").getAsBigDecimal()
+            );
 
-        System.out.println(auction.getCurrentPrice());
-        auction.setId(UUID.randomUUID());
-        CountingSemaphore semaphore = new CountingSemaphore(1);
+            auction.setId(UUID.randomUUID());
 
-        semaphore.P();
-        try {
-            database.createAuction(auction);
-            writeResponse(new AuctionMessage(MessageType.AUCTION_CREATION_ACCEPTED, auction.getId()));
-            broadcastAuctionUpdate();
-        } catch (Exception e) {
-            writeResponse(new AuctionMessage(MessageType.AUCTION_CREATION_REJECTED, "Error creating auction: " + e.getMessage()));
-        } finally {
-            semaphore.V();
+            try {
+                database.createAuction(auction);
+                writeResponse(new AuctionMessage(MessageType.AUCTION_CREATION_ACCEPTED, auction.getId()));
+                broadcastAuctionUpdate();
+            } catch (Exception e) {
+                writeResponse(new AuctionMessage(MessageType.AUCTION_CREATION_REJECTED, "Error creating auction: " + e.getMessage()));
+            }
         }
     }
 
